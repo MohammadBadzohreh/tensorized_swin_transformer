@@ -46,6 +46,7 @@ class Patch_Embedding(nn.Module):
         # Apply convolution: output shape (B, out_channels, H/patch_size, W/patch_size)
         x = self.proj(x)
         B, C, H, W = x.shape
+
         # Reshape the channel dimension into the specified embedding shape.
         # This gives a tensor of shape (B, embed_shape[0], embed_shape[1], embed_shape[2], H, W)
         x = x.view(B, self.embed_shape[0], self.embed_shape[1], self.embed_shape[2], H, W)

@@ -231,6 +231,11 @@ class ShiftedWindowMSA(nn.Module):
         self.rank_window = rank_window    # e.g., (4, 4, 3)
         self.head_factors = head_factors  # e.g., (2, 2, 1)
         # Number of heads is the product of the head factors.
+
+        self.scale = ((self.embed_dims[0] // self.head_factors[0]) *
+                      (self.embed_dims[1] // self.head_factors[1]) *
+                      (self.embed_dims[2] // self.head_factors[2])) ** (-0.5)
+
         self.num_heads = 1
         for h in head_factors:
             self.num_heads *= h
@@ -314,7 +319,7 @@ class ShiftedWindowMSA(nn.Module):
         attn = torch.einsum(
             "b m n i j a d e x y z, b m n k l a d e x y z -> b m n a d e i j k l",
             q, k
-        )
+        ) * self.scale
 
         # print(attn.shape)
         num_tokens = ws1 * ws2
