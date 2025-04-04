@@ -5,6 +5,7 @@ from einops import rearrange
 # from Window_partition import WindowPartition
 from Tensorized_Layers.TCL_CHANGED import TCL_CHANGED
 
+
 class WindowPartition(nn.Module):
     """
     Utility module for partitioning and reversing windows in a patch grid.
@@ -13,6 +14,7 @@ class WindowPartition(nn.Module):
     After partitioning with a given window_size, the tensor is reshaped into:
         (B, H//window_size, W//window_size, window_size, window_size, *embed_dims)
     """
+
     def __init__(self, window_size: int):
         super(WindowPartition, self).__init__()
         self.window_size = window_size
@@ -31,7 +33,8 @@ class WindowPartition(nn.Module):
         B, H, W, *embed_dims = x.shape
         ws = self.window_size
         if H % ws != 0 or W % ws != 0:
-            raise ValueError(f"H and W must be divisible by window_size {ws}. Got H={H}, W={W}.")
+            raise ValueError(
+                f"H and W must be divisible by window_size {ws}. Got H={H}, W={W}.")
         # Reshape to split H and W into windows.
         x = x.view(B, H // ws, ws, W // ws, ws, *embed_dims)
         # Permute to group the window blocks together.
@@ -54,7 +57,8 @@ class WindowPartition(nn.Module):
         ws = self.window_size
         B, num_h, num_w, ws1, ws2, *embed_dims = windows.shape
         # Permute back to interleave the window dimensions.
-        x = windows.permute(0, 1, 3, 2, 4, *range(5, windows.dim())).contiguous()
+        x = windows.permute(
+            0, 1, 3, 2, 4, *range(5, windows.dim())).contiguous()
         # Reshape to reconstruct the original feature map.
         x = x.view(B, num_h * ws1, num_w * ws2, *embed_dims)
         return x
@@ -78,20 +82,20 @@ class WindowMSA(nn.Module):
                               For example, (2, 2, 1) will yield 2*2*1 = 4 heads.
         device (str): Device identifier (default 'cpu').
     """
+
     def __init__(self, window_size: int, embed_dims: tuple, rank_window: tuple, head_factors: tuple, device='cpu'):
         super(WindowMSA, self).__init__()
         self.window_size = window_size
         self.embed_dims = embed_dims      # e.g., (4, 4, 3)
         self.rank_window = rank_window    # e.g., (4, 4, 3)
         self.head_factors = head_factors  # e.g., (2, 2, 1)
-        # Number of heads is the product of the head factors.
 
+        self.device = device
+        # Number of heads is the product of the head factors.
 
         self.scale = ((self.embed_dims[0] // self.head_factors[0]) *
                       (self.embed_dims[1] // self.head_factors[1]) *
                       (self.embed_dims[2] // self.head_factors[2])) ** (-0.5)
-
-
 
         self.num_heads = 1
         for h in head_factors:
@@ -101,27 +105,35 @@ class WindowMSA(nn.Module):
         self.input_size_window = (window_size, window_size) + embed_dims
 
         # Instantiate TCL layers for Q, K, and V.
-        self.tcl_q = TCL_CHANGED(input_size=self.input_size_window, rank=rank_window, ignore_modes=(0, 1), bias=True, device=device)
-        self.tcl_k = TCL_CHANGED(input_size=self.input_size_window, rank=rank_window, ignore_modes=(0, 1), bias=True, device=device)
-        self.tcl_v = TCL_CHANGED(input_size=self.input_size_window, rank=rank_window, ignore_modes=(0, 1), bias=True, device=device)
+        self.tcl_q = TCL_CHANGED(input_size=self.input_size_window,
+                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
+        self.tcl_k = TCL_CHANGED(input_size=self.input_size_window,
+                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
+        self.tcl_v = TCL_CHANGED(input_size=self.input_size_window,
+                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
 
         # Create a learnable relative bias table.
         self.rel_bias_table = nn.Parameter(
-            torch.zeros((2 * window_size - 1) * (2 * window_size - 1), self.num_heads)
+            torch.zeros((2 * window_size - 1) *
+                        (2 * window_size - 1), self.num_heads, device=self.device)
         )
         nn.init.trunc_normal_(self.rel_bias_table, std=0.02)
 
         # Pre-compute relative position indices for a window.
-        coords_h = torch.arange(window_size)
-        coords_w = torch.arange(window_size)
-        coords = torch.stack(torch.meshgrid(coords_h, coords_w, indexing='ij'))  # [2, ws, ws]
+        coords_h = torch.arange(window_size, device=self.device)
+        coords_w = torch.arange(window_size, device=self.device)
+        coords = torch.stack(torch.meshgrid(
+            coords_h, coords_w, indexing='ij'))  # [2, ws, ws]
         coords_flatten = torch.flatten(coords, 1)  # [2, ws*ws]
-        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # [2, ws*ws, ws*ws]
-        relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # [ws*ws, ws*ws, 2]
+        relative_coords = coords_flatten[:, :, None] - \
+            coords_flatten[:, None, :]  # [2, ws*ws, ws*ws]
+        relative_coords = relative_coords.permute(
+            1, 2, 0).contiguous()  # [ws*ws, ws*ws, 2]
         relative_coords[:, :, 0] += window_size - 1
         relative_coords[:, :, 1] += window_size - 1
         relative_coords[:, :, 0] *= 2 * window_size - 1
-        self.relative_position_index = relative_coords.sum(-1)  # [ws*ws, ws*ws]
+        # [ws*ws, ws*ws]
+        self.relative_position_index = relative_coords.sum(-1)
 
         self.window_partition = WindowPartition(window_size)
 
@@ -179,11 +191,14 @@ class WindowMSA(nn.Module):
 
         # 7. Compute and add relative positional bias.
         bias = self.rel_bias_table[self.relative_position_index.view(-1)]
-        bias = bias.view(num_tokens, num_tokens, self.num_heads)  # (num_tokens, num_tokens, num_heads)
-        bias = bias.permute(2, 0, 1).contiguous()  # (num_heads, num_tokens, num_tokens)
+        # (num_tokens, num_tokens, num_heads)
+        bias = bias.view(num_tokens, num_tokens, self.num_heads)
+        # (num_heads, num_tokens, num_tokens)
+        bias = bias.permute(2, 0, 1).contiguous()
         # Reshape bias to separate head dimensions: (h1, h2, h3, num_tokens, num_tokens)
         bias = bias.view(h1, h2, h3, num_tokens, num_tokens)
-        bias = bias.unsqueeze(0).unsqueeze(0).unsqueeze(0)  # (1, 1, 1, h1, h2, h3, num_tokens, num_tokens)
+        # (1, 1, 1, h1, h2, h3, num_tokens, num_tokens)
+        bias = bias.unsqueeze(0).unsqueeze(0).unsqueeze(0)
         # Flatten query spatial dims (i,j) and key spatial dims (k,l) in attn.
         attn_flat = attn.view(B, nH, nW, h1, h2, h3, num_tokens, num_tokens)
         attn_flat = attn_flat + bias
@@ -198,7 +213,6 @@ class WindowMSA(nn.Module):
         # print(attn[0, 0, 0, 0, 0, 0, 0, 0, :, :].sum())
 
         # print(attn.shape)
-
 
         # 9. Multiply attention scores with V to get the weighted sum.
         final_output = torch.einsum(
@@ -220,9 +234,6 @@ class WindowMSA(nn.Module):
 
         # print(out.shape)
         return out
-    
-
-
 
 
 # usage
@@ -241,4 +252,3 @@ class WindowMSA(nn.Module):
 #                     rank_window=rank_window, head_factors=head_factors, device=device).to(device)
 
 # x = w_msa(x)
-

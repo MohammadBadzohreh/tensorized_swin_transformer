@@ -6,7 +6,7 @@ from einops import rearrange
 from Tensorized_Layers.TCL_CHANGED import TCL_CHANGED
 
 
-def generate_2d_attention_mask(H=8, W=8, window_size=4, shift_size=2):
+def generate_2d_attention_mask(H=8, W=8, window_size=4, shift_size=2, device="cuda"):
     """
     Generates a 2D attention mask, ending with shape:
       [1, num_win_h, num_win_w, 1, 1, 1, window_size*window_size, window_size*window_size]
@@ -15,7 +15,7 @@ def generate_2d_attention_mask(H=8, W=8, window_size=4, shift_size=2):
     # --------------------------------------------------------------------------
     # 1) Create a label mask [1, H, W, 1] and fill it using "shifted" slices
     # --------------------------------------------------------------------------
-    img_mask = torch.zeros((1, H, W, 1))
+    img_mask = torch.zeros((1, H, W, 1), device=device)
 
     h_slices = (
         slice(0, -window_size),
@@ -79,7 +79,8 @@ def generate_2d_attention_mask(H=8, W=8, window_size=4, shift_size=2):
     num_win_w = W // window_size
 
     # 4a) First add a batch dimension
-    attn_mask = attn_mask.unsqueeze(0)  # => [1, num_windows, window_size*window_size, window_size*window_size]
+    # => [1, num_windows, window_size*window_size, window_size*window_size]
+    attn_mask = attn_mask.unsqueeze(0)
 
     # 4b) Reshape num_windows into (num_win_h, num_win_w)
     attn_mask = attn_mask.reshape(
@@ -106,6 +107,7 @@ class WindowPartition(nn.Module):
     After partitioning with a given window_size, the tensor is reshaped into:
         (B, H//window_size, W//window_size, window_size, window_size, *embed_dims)
     """
+
     def __init__(self, window_size: int):
         super(WindowPartition, self).__init__()
         self.window_size = window_size
@@ -124,7 +126,8 @@ class WindowPartition(nn.Module):
         B, H, W, *embed_dims = x.shape
         ws = self.window_size
         if H % ws != 0 or W % ws != 0:
-            raise ValueError(f"H and W must be divisible by window_size {ws}. Got H={H}, W={W}.")
+            raise ValueError(
+                f"H and W must be divisible by window_size {ws}. Got H={H}, W={W}.")
         # Reshape to split H and W into windows.
         x = x.view(B, H // ws, ws, W // ws, ws, *embed_dims)
         # Permute to group the window blocks together.
@@ -147,20 +150,23 @@ class WindowPartition(nn.Module):
         ws = self.window_size
         B, num_h, num_w, ws1, ws2, *embed_dims = windows.shape
         # Permute back to interleave the window dimensions.
-        x = windows.permute(0, 1, 3, 2, 4, *range(5, windows.dim())).contiguous()
+        x = windows.permute(
+            0, 1, 3, 2, 4, *range(5, windows.dim())).contiguous()
         # Reshape to reconstruct the original feature map.
         x = x.view(B, num_h * ws1, num_w * ws2, *embed_dims)
         return x
 
+
 class ShiftedWindowPartition(nn.Module):
     """
     Utility module for partitioning and reversing windows with a spatial shift applied.
-    
+
     This class performs a spatial shift before partitioning the input tensor into windows.
     After partitioning and reverse operations, the spatial shift is compensated for.
-    
+
     Input shape: (B, H, W, *embed_dims)
     """
+
     def __init__(self, window_size: int, shift_size: int):
         super(ShiftedWindowPartition, self).__init__()
         self.window_size = window_size
@@ -178,7 +184,8 @@ class ShiftedWindowPartition(nn.Module):
             torch.Tensor: Partitioned windows after spatial shift.
         """
         # Apply negative shift to the spatial dimensions.
-        x_shifted = torch.roll(x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
+        x_shifted = torch.roll(
+            x, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
         # Partition the shifted tensor using WindowPartition.
         windows = self.window_partition(x_shifted)
         return windows
@@ -200,9 +207,9 @@ class ShiftedWindowPartition(nn.Module):
         x_reconstructed = self.window_partition.reverse(windows, H, W)
         # Roll back the tensor to reverse the spatial shift.
 
-        x_final = torch.roll(x_reconstructed, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
+        x_final = torch.roll(x_reconstructed, shifts=(
+            self.shift_size, self.shift_size), dims=(1, 2))
         return x_final
-
 
 
 class ShiftedWindowMSA(nn.Module):
@@ -223,13 +230,15 @@ class ShiftedWindowMSA(nn.Module):
                               For example, (2, 2, 1) will yield 2*2*1 = 4 heads.
         device (str): Device identifier (default 'cpu').
     """
-    def __init__(self, window_size: int, embed_dims: tuple, rank_window: tuple, head_factors: tuple, device='cpu'):
+
+    def __init__(self, window_size: int, embed_dims: tuple, rank_window: tuple, head_factors: tuple, device='cuda'):
         super(ShiftedWindowMSA, self).__init__()
         self.window_size = window_size
         self.shift_size = window_size // 2
         self.embed_dims = embed_dims      # e.g., (4, 4, 3)
         self.rank_window = rank_window    # e.g., (4, 4, 3)
         self.head_factors = head_factors  # e.g., (2, 2, 1)
+        self.device = device
         # Number of heads is the product of the head factors.
 
         self.scale = ((self.embed_dims[0] // self.head_factors[0]) *
@@ -244,35 +253,43 @@ class ShiftedWindowMSA(nn.Module):
         self.input_size_window = (window_size, window_size) + embed_dims
 
         # Instantiate TCL layers for Q, K, and V.
-        self.tcl_q = TCL_CHANGED(input_size=self.input_size_window, rank=rank_window, ignore_modes=(0, 1), bias=True, device=device)
-        self.tcl_k = TCL_CHANGED(input_size=self.input_size_window, rank=rank_window, ignore_modes=(0, 1), bias=True, device=device)
-        self.tcl_v = TCL_CHANGED(input_size=self.input_size_window, rank=rank_window, ignore_modes=(0, 1), bias=True, device=device)
+        self.tcl_q = TCL_CHANGED(input_size=self.input_size_window,
+                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
+        self.tcl_k = TCL_CHANGED(input_size=self.input_size_window,
+                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
+        self.tcl_v = TCL_CHANGED(input_size=self.input_size_window,
+                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
 
         # Create a learnable relative bias table.
         self.rel_bias_table = nn.Parameter(
-            torch.zeros((2 * window_size - 1) * (2 * window_size - 1), self.num_heads)
+            torch.zeros((2 * window_size - 1) *
+                        (2 * window_size - 1), self.num_heads, device=self.device)
         )
         nn.init.trunc_normal_(self.rel_bias_table, std=0.02)
 
         # Pre-compute relative position indices for a window.
-        coords_h = torch.arange(window_size)
-        coords_w = torch.arange(window_size)
-        coords = torch.stack(torch.meshgrid(coords_h, coords_w, indexing='ij'))  # [2, ws, ws]
+        coords_h = torch.arange(window_size, device=self.device)
+        coords_w = torch.arange(window_size, device=self.device)
+        coords = torch.stack(torch.meshgrid(
+            coords_h, coords_w, indexing='ij'))  # [2, ws, ws]
         coords_flatten = torch.flatten(coords, 1)  # [2, ws*ws]
-        relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # [2, ws*ws, ws*ws]
-        relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # [ws*ws, ws*ws, 2]
+        relative_coords = coords_flatten[:, :, None] - \
+            coords_flatten[:, None, :]  # [2, ws*ws, ws*ws]
+        relative_coords = relative_coords.permute(
+            1, 2, 0).contiguous()  # [ws*ws, ws*ws, 2]
         relative_coords[:, :, 0] += window_size - 1
         relative_coords[:, :, 1] += window_size - 1
         relative_coords[:, :, 0] *= 2 * window_size - 1
-        self.relative_position_index = relative_coords.sum(-1)  # [ws*ws, ws*ws]
+        # [ws*ws, ws*ws]
+        self.relative_position_index = relative_coords.sum(-1)
 
         # print("shift_size is",self.shift_size)
 
-        self.window_partition = ShiftedWindowPartition(window_size=self.window_size , shift_size=self.shift_size)
+        self.window_partition = ShiftedWindowPartition(
+            window_size=self.window_size, shift_size=self.shift_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, H, W, *embed_shape = x.shape
-
 
         ws = self.window_size
 
@@ -326,11 +343,14 @@ class ShiftedWindowMSA(nn.Module):
 
         # 7. Compute and add relative positional bias.
         bias = self.rel_bias_table[self.relative_position_index.view(-1)]
-        bias = bias.view(num_tokens, num_tokens, self.num_heads)  # (num_tokens, num_tokens, num_heads)
-        bias = bias.permute(2, 0, 1).contiguous()  # (num_heads, num_tokens, num_tokens)
+        # (num_tokens, num_tokens, num_heads)
+        bias = bias.view(num_tokens, num_tokens, self.num_heads)
+        # (num_heads, num_tokens, num_tokens)
+        bias = bias.permute(2, 0, 1).contiguous()
         # Reshape bias to separate head dimensions: (h1, h2, h3, num_tokens, num_tokens)
         bias = bias.view(h1, h2, h3, num_tokens, num_tokens)
-        bias = bias.unsqueeze(0).unsqueeze(0).unsqueeze(0)  # (1, 1, 1, h1, h2, h3, num_tokens, num_tokens)
+        # (1, 1, 1, h1, h2, h3, num_tokens, num_tokens)
+        bias = bias.unsqueeze(0).unsqueeze(0).unsqueeze(0)
         # Flatten query spatial dims (i,j) and key spatial dims (k,l) in attn.
         attn_flat = attn.view(B, nH, nW, h1, h2, h3, num_tokens, num_tokens)
 
@@ -342,17 +362,13 @@ class ShiftedWindowMSA(nn.Module):
 
         # print("attention flat after add bias" , attn_flat.shape)
 
-        mask = generate_2d_attention_mask(H=H, W=W,window_size=ws,shift_size=self.shift_size)
+        mask = generate_2d_attention_mask(
+            H=H, W=W, window_size=ws, shift_size=self.shift_size, device=x.device)
 
         # print("shape of mask is", mask.shape)
         attn_flat = attn_flat + mask
 
         # print("attn_flat shape afeter add to the mask",attn_flat.shape)
-
-
-
-
-
 
         # print("attention flat shape",attn_flat.shape)
 
@@ -366,7 +382,6 @@ class ShiftedWindowMSA(nn.Module):
         # print(attn[0, 0, 0, 0, 0, 0, 0, 0, :, :].sum())
 
         # print(attn.shape)
-
 
         # 9. Multiply attention scores with V to get the weighted sum.
         final_output = torch.einsum(
@@ -388,9 +403,6 @@ class ShiftedWindowMSA(nn.Module):
 
         # print(out.shape)
         return out
-    
-
-
 
 
 # usage
@@ -409,4 +421,3 @@ class ShiftedWindowMSA(nn.Module):
 #                     rank_window=rank_window, head_factors=head_factors, device=device).to(device)
 
 # x = w_msa(x)
-

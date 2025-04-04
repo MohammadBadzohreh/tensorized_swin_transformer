@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
-from Tensorized_Layers.TCL_CHANGED import TCL_CHANGED  # Ensure you have your TCL implementation in this module
+# Ensure you have your TCL implementation in this module
+from Tensorized_Layers.TCL_CHANGED import TCL_CHANGED
+
 
 class TensorizedPatchMerging(nn.Module):
     def __init__(
@@ -10,7 +12,7 @@ class TensorizedPatchMerging(nn.Module):
         out_embed_shape=(4, 4, 6),
         bias=True,
         ignore_modes=(0, 1, 2),
-        device='cpu'
+        device='cuda'
     ):
         """
         Tensorized patch merging for Swin Transformer.
@@ -78,13 +80,14 @@ class TensorizedPatchMerging(nn.Module):
             raise ValueError("Input patch embedding shape mismatch.")
 
         # Extract 2x2 neighboring patches along the spatial dimensions.
-        top_left     = x[:, 0::2, 0::2, :, :, :]
-        bottom_left  = x[:, 1::2, 0::2, :, :, :]
-        top_right    = x[:, 0::2, 1::2, :, :, :]
+        top_left = x[:, 0::2, 0::2, :, :, :]
+        bottom_left = x[:, 1::2, 0::2, :, :, :]
+        top_right = x[:, 0::2, 1::2, :, :, :]
         bottom_right = x[:, 1::2, 1::2, :, :, :]
 
         # Concatenate along the channel dimension.
-        x_merged = torch.cat([top_left, bottom_left, top_right, bottom_right], dim=-1)
+        x_merged = torch.cat(
+            [top_left, bottom_left, top_right, bottom_right], dim=-1)
         # x_merged now has shape: (B, H/2, W/2, r1, r2, 4*C)
 
         # Apply the tensorized linear layer to merge patches.
