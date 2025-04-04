@@ -56,6 +56,10 @@ class TensorizedPatchMerging(nn.Module):
             4 * self.input_size[5]
         )
 
+
+
+        self.norm = nn.LayerNorm((self.input_size[3] , self.input_size[4], 4 * self.input_size[5]))
+
         # Instantiate the TCL layer for patch merging.
         self.tcl = TCL_CHANGED(
             input_size=self.tcl_input_size,
@@ -91,7 +95,9 @@ class TensorizedPatchMerging(nn.Module):
         # x_merged now has shape: (B, H/2, W/2, r1, r2, 4*C)
 
         # Apply the tensorized linear layer to merge patches.
-        out = self.tcl(x_merged)
+
+        x = self.norm(x_merged)
+        out = self.tcl(x)
         return out
 
 # -------------------------------
