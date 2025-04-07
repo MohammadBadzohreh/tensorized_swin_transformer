@@ -261,11 +261,11 @@ class ShiftedWindowMSA(nn.Module):
                                  rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
 
         # Create a learnable relative bias table.
-        self.rel_bias_table = nn.Parameter(
-            torch.zeros((2 * window_size - 1) *
-                        (2 * window_size - 1), self.num_heads, device=self.device)
-        )
-        nn.init.trunc_normal_(self.rel_bias_table, std=0.02)
+        # self.rel_bias_table = nn.Parameter(
+        #     torch.zeros((2 * window_size - 1) *
+        #                 (2 * window_size - 1), self.num_heads, device=self.device)
+        # )
+        # nn.init.trunc_normal_(self.rel_bias_table, std=0.02)
 
         # # Pre-compute relative position indices for a window.
         # coords_h = torch.arange(window_size, device=self.device)
