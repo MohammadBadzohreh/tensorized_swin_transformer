@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 # Ensure you have your TCL implementation in this module
-from Tensorized_Layers.TCL_CHANGED import TCL_CHANGED
+from Tensorized_Layers.TCL import TCL_extended as TCL_CHANGED
 
 
 class TensorizedPatchMerging(nn.Module):

@@ -254,11 +254,11 @@ class ShiftedWindowMSA(nn.Module):
 
         # Instantiate TCL layers for Q, K, and V.
         self.tcl_q = TCL_CHANGED(input_size=self.input_size_window,
-                                 rank=rank_window, ignore_modes=(0, 1, 2), bias=True, device=self.device , r=2)
+                                 rank=rank_window, ignore_modes=(0, 1, 2), bias=True, device=self.device , r=10)
         self.tcl_k = TCL_CHANGED(input_size=self.input_size_window,
-                                 rank=rank_window, ignore_modes=(0, 1, 2), bias=True, device=self.device, r=2)
+                                 rank=rank_window, ignore_modes=(0, 1, 2), bias=True, device=self.device, r=10)
         self.tcl_v = TCL_CHANGED(input_size=self.input_size_window,
-                                 rank=rank_window, ignore_modes=(0, 1, 2), bias=True, device=self.device, r=2)
+                                 rank=rank_window, ignore_modes=(0, 1, 2), bias=True, device=self.device, r=10)
 
 
         # # Create a learnable relative bias table.

@@ -94,6 +94,9 @@ class TCL_CHANGED(nn.Module):
         If the input x has an extra batch dimension (i.e. its dimension equals len(input_size)+1),
         insert an ellipsis in both the input and output parts of the einsum equation.
         """
+
+
+        
         if x.dim() == len(self.input_size) + 1:
             input_part, output_part = self.out_formula.split("->")
             new_formula = "..." + input_part + "->..." + output_part

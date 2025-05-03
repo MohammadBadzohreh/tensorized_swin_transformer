@@ -101,7 +101,7 @@ class TCL(nn.Module):
 
 
 class TCL_extended(nn.Module):
-    def __init__(self, input_size, rank, ignore_modes = (0,), bias = True, device = 'cuda', r = 3):
+    def __init__(self, input_size, rank, ignore_modes = (0,), bias = True, device = 'cuda', r = 10):
         super(TCL_extended, self).__init__()
         
         self.TCLs = nn.ModuleList([TCL(input_size, rank, ignore_modes, bias, device) for _ in range(r)])

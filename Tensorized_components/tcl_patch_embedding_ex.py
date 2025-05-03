@@ -8,7 +8,7 @@ from Tensorized_Layers.TCL import TCL, TCL_extended
 # from Tensorized_Layers.TRL import TRL
 
 class PatchEmbedding(nn.Module):
-    def __init__(self, input_size, patch_size, embed_dim, bias = True, device = 'cuda', ignore_modes = (0,1,2), tcl_type='normal', tcl_r = 3):
+    def __init__(self, input_size, patch_size, embed_dim, bias = True, device = 'cuda', ignore_modes = (0,1,2), tcl_type='normal', tcl_r = 2):
         super(PatchEmbedding, self).__init__()
         self.input_size = input_size
         self.patch_size = patch_size
