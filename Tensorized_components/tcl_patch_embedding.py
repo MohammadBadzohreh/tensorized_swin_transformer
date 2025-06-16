@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from Tensorized_Layers.TCL_CHANGED import TCL_CHANGED
+from Tensorized_Layers.TCL import   TCL as TCL_CHANGED
 # from Tensorized_Layers.TRL import TRL
 
 class PatchEmbedding(nn.Module):
