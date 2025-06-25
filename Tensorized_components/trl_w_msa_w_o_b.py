@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from Tensorized_Layers.TCL_CHANGED import TCL_CHANGED
+# from Tensorized_Layers.TCL import TCL   as  TCL_CHANGED
+from Tensorized_Layers.TRL import   TRL  
+
 
 
 class WindowPartition(nn.Module):
@@ -100,15 +102,13 @@ class WindowMSA(nn.Module):
             self.num_heads *= h
 
         # Input size for TCL layers for each window: (window_size, window_size, *embed_dims)
-        self.input_size_window = (window_size, window_size) + embed_dims
+        self.input_size_window = (1,window_size, window_size) + embed_dims
 
-        # Instantiate TCL layers for Q, K, and V.
-        self.tcl_q = TCL_CHANGED(input_size=self.input_size_window,
-                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
-        self.tcl_k = TCL_CHANGED(input_size=self.input_size_window,
-                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
-        self.tcl_v = TCL_CHANGED(input_size=self.input_size_window,
-                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
+        rank = self.rank_window + self.rank_window
+
+        self.trl_q = TRL(input_size=self.input_size_window,output=self.rank_window,rank=rank,ignore_modes=(0,1,2),bias=True, device=self.device)
+        self.trl_k = TRL(input_size=self.input_size_window,output=self.rank_window,rank=rank,ignore_modes=(0,1,2),bias=True, device=self.device)
+        self.trl_v = TRL(input_size=self.input_size_window,output=self.rank_window,rank=rank,ignore_modes=(0,1,2),bias=True, device=self.device)
 
         # # Create a learnable relative bias table.
         # self.rel_bias_table = nn.Parameter(
@@ -149,15 +149,9 @@ class WindowMSA(nn.Module):
         x_windows = x_windows.reshape(B * num_windows, ws1, ws2, *embed_shape)
 
         # 3. Compute Q, K, V using TCL layers.
-
-
-        print("shape of x windows is:" , x_windows.shape)
-        Q_windows = self.tcl_q(x_windows)
-        K_windows = self.tcl_k(x_windows)
-        V_windows = self.tcl_v(x_windows)
-
-
-        print("shape of  Q windows is:" , Q_windows.shape)
+        Q_windows = self.trl_q(x_windows)
+        K_windows = self.trl_k(x_windows)
+        V_windows = self.trl_v(x_windows)
 
         # 4. Reshape back to batch + windows.
         Q_windows = Q_windows.view(B, nH, nW, ws1, ws2, *self.rank_window)
