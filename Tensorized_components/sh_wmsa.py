@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 # from Window_partition import WindowPartition
-from Tensorized_Layers.TCL_CHANGED import TCL_CHANGED
+from Tensorized_Layers.TCL  import  TCL as TCL_CHANGED
 
 
 def generate_2d_attention_mask(H=8, W=8, window_size=4, shift_size=2, device="cuda"):
@@ -250,15 +250,15 @@ class ShiftedWindowMSA(nn.Module):
             self.num_heads *= h
 
         # Input size for TCL layers for each window: (window_size, window_size, *embed_dims)
-        self.input_size_window = (window_size, window_size) + embed_dims
+        self.input_size_window = (1,window_size, window_size) + embed_dims
 
         # Instantiate TCL layers for Q, K, and V.
         self.tcl_q = TCL_CHANGED(input_size=self.input_size_window,
-                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
+                                 rank=rank_window, ignore_modes=(0, 1,2), bias=True, device=self.device)
         self.tcl_k = TCL_CHANGED(input_size=self.input_size_window,
-                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
+                                 rank=rank_window, ignore_modes=(0, 1,2), bias=True, device=self.device)
         self.tcl_v = TCL_CHANGED(input_size=self.input_size_window,
-                                 rank=rank_window, ignore_modes=(0, 1), bias=True, device=self.device)
+                                 rank=rank_window, ignore_modes=(0, 1,2), bias=True, device=self.device)
 
         # Create a learnable relative bias table.
         self.rel_bias_table = nn.Parameter(
