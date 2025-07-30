@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from Tensorized_Layers.TCL import TCL_extended as TCL_CHANGED
+from Tensorized_Layers.TCL import TCL as TCL_CHANGED
 
 
 class TensorizedPatchMerging(nn.Module):
